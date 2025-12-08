@@ -1,0 +1,58 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+	<PropertyGroup>
+		<OutputType>WinExe</OutputType>
+		<TargetFramework>net8.0-windows</TargetFramework>
+		<Nullable>disable</Nullable>
+		<UseWPF>true</UseWPF>
+		<ImplicitUsings>enable</ImplicitUsings>
+		<ApplicationIcon>icon.ico</ApplicationIcon>
+	</PropertyGroup>
+
+	<ItemGroup>
+		<!-- Entity Framework Core -->
+		<PackageReference Include="Microsoft.EntityFrameworkCore.SqlServer" Version="8.0.0" />
+		<PackageReference Include="Microsoft.EntityFrameworkCore.Tools" Version="8.0.0">
+			<PrivateAssets>all</PrivateAssets>
+			<IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+		</PackageReference>
+
+		<!-- HTML Scraping -->
+		<PackageReference Include="HtmlAgilityPack" Version="1.11.61" />
+
+		<!-- MVVM Toolkit -->
+		<PackageReference Include="CommunityToolkit.Mvvm" Version="8.2.1" />
+
+		<!-- For JSON configuration -->
+		<PackageReference Include="Microsoft.Extensions.Configuration" Version="8.0.0" />
+		<PackageReference Include="Microsoft.Extensions.Configuration.Json" Version="8.0.0" />
+		<PackageReference Include="Microsoft.Extensions.Configuration.EnvironmentVariables" Version="8.0.0" />
+		<PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="8.0.0" />
+		<PackageReference Include="Microsoft.Extensions.Logging" Version="8.0.0" />
+		<PackageReference Include="Microsoft.Extensions.Options.ConfigurationExtensions" Version="8.0.0" />
+
+		<!-- For better UI -->
+		<PackageReference Include="ModernWpfUI" Version="0.9.6" />
+		<PackageReference Include="WpfAnimatedGif" Version="2.0.2" />
+	</ItemGroup>
+
+	<ItemGroup>
+		<None Update="appsettings.json">
+			<CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+		</None>
+	</ItemGroup>
+	
+	<ItemGroup>
+		<!-- Configuration files -->
+		<None Update="appsettings.Development.json">
+			<CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+		</None>
+	</ItemGroup>
+
+	<ItemGroup>
+		<!-- Icons and resources -->
+		<Content Include="icon.ico" />
+		<Resource Include="Images\**" />
+	</ItemGroup>
+
+</Project>

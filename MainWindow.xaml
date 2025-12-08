@@ -1,0 +1,287 @@
+﻿<Window x:Class="BilderbergImport.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        xmlns:local="clr-namespace:BilderbergImport"
+        xmlns:vm="clr-namespace:BilderbergImport.ViewModels"
+        mc:Ignorable="d"
+        Title="Bilderberg Meeting Data Importer" Height="800" Width="1200"
+        WindowStartupLocation="CenterScreen">
+    <Window.DataContext>
+        <vm:MainViewModel />
+    </Window.DataContext>
+    <Window.Resources>
+        <!-- Converters -->
+        <local:InverseBooleanConverter x:Key="InverseBooleanConverter" />
+        <BooleanToVisibilityConverter x:Key="BooleanToVisibilityConverter" />
+    </Window.Resources>
+    <Grid Margin="10">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+            <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
+
+        <!-- Header -->
+        <TextBlock Grid.Row="0" 
+                   Text="Meeting Data Importer" 
+                   FontSize="24" 
+                   FontWeight="Bold" 
+                   Margin="0,0,0,20" />
+
+        <!-- Meeting Selection -->
+        <Border Grid.Row="1" 
+                BorderBrush="#CCCCCC" 
+                BorderThickness="1" 
+                CornerRadius="5" 
+                Padding="10"
+                Margin="0,0,0,10">
+            <StackPanel>
+                <TextBlock Text="Select Meeting" 
+                           FontWeight="Bold" 
+                           Margin="0,0,0,5" />
+                <ComboBox ItemsSource="{Binding Meetings}"
+                          SelectedItem="{Binding SelectedMeeting}"
+                          DisplayMemberPath="DisplayName"
+                          Width="300"
+                          HorizontalAlignment="Left">
+                </ComboBox>
+            </StackPanel>
+        </Border>
+
+        <!-- Import Sections -->
+        <Grid Grid.Row="2" Margin="0,0,0,10">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="10" />
+                <ColumnDefinition Width="*" />
+            </Grid.ColumnDefinitions>
+
+            <!-- Meetings Import -->
+            <Border Grid.Column="0" 
+                    BorderBrush="#CCCCCC" 
+                    BorderThickness="1" 
+                    CornerRadius="5" 
+                    Padding="10"
+                    Background="#F9F9F9">
+                <StackPanel>
+                    <TextBlock Text="Import Meetings" 
+                               FontWeight="Bold" 
+                               Margin="0,0,0,5" />
+                    <TextBox Text="{Binding MeetingsUrl}" 
+                             Margin="0,0,0,5" 
+                             Padding="3" />
+                    <Button Command="{Binding ImportMeetingsCommand}" 
+                            Content="Import Meetings" 
+                            Padding="10,5"
+                            HorizontalAlignment="Right"
+                            IsEnabled="{Binding IsImporting, Converter={StaticResource InverseBooleanConverter}}" />
+                </StackPanel>
+            </Border>
+
+            <!-- Participants Import -->
+            <Border Grid.Column="2" 
+                    BorderBrush="#CCCCCC" 
+                    BorderThickness="1" 
+                    CornerRadius="5" 
+                    Padding="10"
+                    Background="#F9F9F9">
+                <StackPanel>
+                    <TextBlock Text="Import Participants" 
+                               FontWeight="Bold" 
+                               Margin="0,0,0,5" />
+                    <TextBox Text="{Binding ParticipantsUrl}" 
+                             Margin="0,0,0,5" 
+                             Padding="3" />
+                    <Button Command="{Binding ImportParticipantsCommand}" 
+                            Content="Import Participants" 
+                            Padding="10,5"
+                            HorizontalAlignment="Right"
+                            IsEnabled="{Binding IsImporting, Converter={StaticResource InverseBooleanConverter}}" />
+                </StackPanel>
+            </Border>
+        </Grid>
+
+        <!-- Action Buttons -->
+        <StackPanel Grid.Row="3" 
+                    Orientation="Horizontal" 
+                    HorizontalAlignment="Right"
+                    Margin="0,0,0,10">
+            <Button Command="{Binding LoadDataCommand}" 
+                    Content="Load Data" 
+                    Padding="15,5" 
+                    Margin="0,0,10,0"
+                    IsEnabled="{Binding IsImporting, Converter={StaticResource InverseBooleanConverter}}" />
+            <Button Command="{Binding ClearDatabaseCommand}" 
+                    Content="Clear All Data" 
+                    Padding="15,5" 
+                    Background="#FF4444" 
+                    Foreground="White"
+                    IsEnabled="{Binding IsImporting, Converter={StaticResource InverseBooleanConverter}}" />
+        </StackPanel>
+
+        <!-- Status Bar -->
+        <Border Grid.Row="4" 
+                Background="#F0F0F0" 
+                CornerRadius="3" 
+                Padding="10,5"
+                Margin="0,0,0,10">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+
+                <TextBlock Grid.Column="0" 
+                           Text="{Binding Status}" 
+                           VerticalAlignment="Center" />
+
+                <ProgressBar Grid.Column="1" 
+                             Width="100" 
+                             IsIndeterminate="True" 
+                             Visibility="{Binding IsImporting, Converter={StaticResource BooleanToVisibilityConverter}}" />
+            </Grid>
+        </Border>
+
+        <!-- Tab Control for Data Display -->
+        <TabControl Grid.Row="5" 
+                    Margin="0,0,0,10">
+
+            <!-- Participants Tab -->
+            <TabItem Header="Participants">
+                <DataGrid ItemsSource="{Binding Participants}" 
+                          AutoGenerateColumns="False" 
+                          CanUserAddRows="False"
+                          IsReadOnly="True"
+                          SelectionMode="Single">
+                    <DataGrid.Columns>
+                        <DataGridTextColumn Header="ID" 
+                                            Binding="{Binding Id}" 
+                                            Width="Auto" />
+                        <DataGridTextColumn Header="First Name" 
+                                            Binding="{Binding FirstName}" 
+                                            Width="*" />
+                        <DataGridTextColumn Header="Last Name" 
+                                            Binding="{Binding LastName}" 
+                                            Width="*" />
+                        <DataGridTextColumn Header="Title" 
+                                            Binding="{Binding Title}" 
+                                            Width="*" />
+                        <DataGridTextColumn Header="Country Code" 
+                                            Binding="{Binding CountryCode}" 
+                                            Width="Auto" />
+                        <DataGridTextColumn Header="Meetings" 
+                                            Binding="{Binding MeetingParticipants.Count}" 
+                                            Width="Auto" />
+                    </DataGrid.Columns>
+                </DataGrid>
+            </TabItem>
+
+            <!-- Meetings Tab -->
+            <TabItem Header="Meetings">
+                <DataGrid ItemsSource="{Binding Meetings}" 
+                          AutoGenerateColumns="False" 
+                          CanUserAddRows="False"
+                          IsReadOnly="True"
+                          SelectionMode="Single">
+                    <DataGrid.Columns>
+                        <DataGridTextColumn Header="ID" 
+                                            Binding="{Binding Id}" 
+                                            Width="Auto" />
+                        <DataGridTextColumn Header="Year" 
+                                            Binding="{Binding Year}" 
+                                            Width="Auto" />
+                        <DataGridTextColumn Header="From Date" 
+                                            Binding="{Binding FromDate, StringFormat=yyyy-MM-dd}" 
+                                            Width="Auto" />
+                        <DataGridTextColumn Header="To Date" 
+                                            Binding="{Binding ToDate, StringFormat=yyyy-MM-dd}" 
+                                            Width="Auto" />
+                        <DataGridTextColumn Header="Location" 
+                                            Binding="{Binding Location}" 
+                                            Width="*" />
+                        <DataGridTextColumn Header="Description" 
+                                            Binding="{Binding Description}" 
+                                            Width="2*" />
+                        <DataGridTextColumn Header="Topics" 
+                                            Binding="{Binding MeetingTopics.Count}" 
+                                            Width="Auto" />
+                        <DataGridTextColumn Header="Participants" 
+                                            Binding="{Binding MeetingParticipants.Count}" 
+                                            Width="Auto" />
+                    </DataGrid.Columns>
+                </DataGrid>
+            </TabItem>
+
+            <!-- Meeting Topics Tab -->
+            <TabItem Header="Meeting Topics">
+                <DataGrid ItemsSource="{Binding MeetingTopics}" 
+                          AutoGenerateColumns="False" 
+                          CanUserAddRows="False"
+                          IsReadOnly="True"
+                          SelectionMode="Single">
+                    <DataGrid.Columns>
+                        <DataGridTextColumn Header="ID" 
+                                            Binding="{Binding Id}" 
+                                            Width="Auto" />
+                        <DataGridTextColumn Header="Meeting ID" 
+                                            Binding="{Binding MeetingId}" 
+                                            Width="Auto" />
+                        <DataGridTextColumn Header="Meeting Year" 
+                                            Binding="{Binding Meeting.Year}" 
+                                            Width="Auto" />
+                        <DataGridTextColumn Header="Topic" 
+                                            Binding="{Binding Topic}" 
+                                            Width="*" />
+                    </DataGrid.Columns>
+                </DataGrid>
+            </TabItem>
+
+            <!-- Meeting Participants Tab -->
+            <TabItem Header="Meeting Participants">
+                <DataGrid ItemsSource="{Binding MeetingParticipants}" 
+                          AutoGenerateColumns="False" 
+                          CanUserAddRows="False"
+                          IsReadOnly="True"
+                          SelectionMode="Single">
+                    <DataGrid.Columns>
+                        <DataGridTextColumn Header="Meeting Year" 
+                                            Binding="{Binding Meeting.Year}" 
+                                            Width="Auto" />
+                        <DataGridTextColumn Header="Meeting Location" 
+                                            Binding="{Binding Meeting.Location}" 
+                                            Width="*" />
+                        <DataGridTextColumn Header="Participant Name" 
+                                            Width="*">
+                            <DataGridTextColumn.Binding>
+                                <MultiBinding StringFormat="{}{0} {1}">
+                                    <Binding Path="Participant.FirstName" />
+                                    <Binding Path="Participant.LastName" />
+                                </MultiBinding>
+                            </DataGridTextColumn.Binding>
+                        </DataGridTextColumn>
+                        <DataGridTextColumn Header="Participant Title" 
+                                            Binding="{Binding Participant.Title}" 
+                                            Width="*" />
+                        <DataGridTextColumn Header="Country Code" 
+                                            Binding="{Binding Participant.CountryCode}" 
+                                            Width="Auto" />
+                    </DataGrid.Columns>
+                </DataGrid>
+            </TabItem>
+
+        </TabControl>
+
+        <!-- Footer -->
+        <TextBlock Grid.Row="6" 
+                   Text="© 2024 Meeting Data Importer" 
+                   Foreground="Gray" 
+                   HorizontalAlignment="Center" />
+
+    </Grid>
+</Window>
