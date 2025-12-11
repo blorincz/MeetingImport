@@ -27,7 +27,7 @@ public partial class MainViewModel : ObservableObject
     [ObservableProperty]
     [NotifyCanExecuteChangedFor(nameof(ImportParticipantsCommand))]
     [NotifyCanExecuteChangedFor(nameof(ImportParticipantsFromTableCommand))]
-    private Meeting? _selectedMeeting;
+    private Meeting _selectedMeeting;
 
     [ObservableProperty]
     private ObservableCollection<Meeting> _meetings = new();

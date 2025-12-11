@@ -3,20 +3,9 @@ using BilderbergImport.Models;
 
 namespace BilderbergImport.Services;
 
-public class ScrapingService
+public class ScrapingService(DataService dataService)
 {
-    private readonly DataService _dataService;
-
-    public ScrapingService(DataService dataService)
-    {
-        _dataService = dataService;
-    }
-
-    private class TopicData
-    {
-        public string MainTopic { get; set; } = string.Empty;
-        public List<string> SubTopics { get; set; } = new();
-    }
+    private readonly DataService _dataService = dataService;
 
     public async Task ImportMeetingsFromHtml(string htmlContent)
     {
@@ -117,112 +106,12 @@ public class ScrapingService
         }
     }
 
-    public async Task ImportTopicsForMeeting(MeetingData meetingData, int meetingId)
-    {
-        foreach (var topicData in meetingData.MainTopics)
-        {
-            // Check if topic already exists for this meeting
-            var existingTopic = await _dataService.GetTopicByMeetingAndTextAsync(meetingId, topicData.Topic);
-
-            if (existingTopic == null)
-            {
-                var topic = new MeetingTopic
-                {
-                    MeetingId = meetingId,
-                    Topic = topicData.Topic
-                };
-
-                int addedTopicId = await _dataService.AddMeetingTopicAsync(topic);
-
-                // Import subtopics
-                foreach (var subTopicText in topicData.SubTopics)
-                {
-                    var subTopic = new MeetingTopicSubTopic
-                    {
-                        TopicId = addedTopicId,
-                        Topic = subTopicText
-                    };
-
-                    await _dataService.AddMeetingTopicSubTopicAsync(subTopic);
-                }
-            }
-        }
-    }
-
-    private async Task<List<Participant>> ScrapeParticipantsAsync(HtmlDocument htmlDoc)
-    {
-        var participants = new List<Participant>();
-
-        // Customize this based on your actual HTML structure
-        var tableRows = htmlDoc.DocumentNode.SelectNodes("//table//tr");
-
-        if (tableRows != null)
-        {
-            foreach (var row in tableRows.Skip(1)) // Skip header if present
-            {
-                var cells = row.SelectNodes("td");
-                if (cells != null && cells.Count >= 4)
-                {
-                    participants.Add(new Participant
-                    {
-                        FirstName = cells[0].InnerText.Trim(),
-                        LastName = cells[1].InnerText.Trim(),
-                        Title = cells[2].InnerText.Trim(),
-                        CountryCode = cells[3].InnerText.Trim()
-                    });
-                }
-            }
-        }
-
-        // Alternative: Look for list items
-        if (participants.Count == 0)
-        {
-            var listItems = htmlDoc.DocumentNode.SelectNodes("//li");
-            if (listItems != null)
-            {
-                foreach (var item in listItems)
-                {
-                    var text = item.InnerText.Trim();
-                    // Parse participant from text (customize based on your format)
-                    var participant = ParseParticipantFromText(text);
-                    if (participant != null)
-                    {
-                        participants.Add(participant);
-                    }
-                }
-            }
-        }
-
-        return await Task.FromResult(participants);
-    }
-
-    private Participant ParseParticipantFromText(string text)
-    {
-        // Customize this based on your participant format
-        // Example: "John Doe (USA) - CEO"
-        var match = System.Text.RegularExpressions.Regex.Match(text,
-            @"^(?<first>\w+)\s+(?<last>\w+)\s*(?:\((?<country>\w+)\))?\s*(?:-\s*(?<title>.+))?$");
-
-        if (match.Success)
-        {
-            return new Participant
-            {
-                FirstName = match.Groups["first"].Value,
-                LastName = match.Groups["last"].Value,
-                CountryCode = match.Groups["country"].Success ? match.Groups["country"].Value : null,
-                Title = match.Groups["title"].Success ? match.Groups["title"].Value : null
-            };
-        }
-
-        return null;
-    }
-
     private static async Task<List<Meeting>> ScrapeMeetingsAsync(HtmlDocument htmlDoc)
     {
         var meetings = new List<Meeting>();
 
         // Use the meeting scraper from previous response
-        var meetingDataList = RobustMeetingScraper.ExtractMeetings(htmlDoc);
+        var meetingDataList = MeetingScraper.ExtractMeetings(htmlDoc);
 
         foreach (var meetingData in meetingDataList)
         {
@@ -261,61 +150,5 @@ public class ScrapingService
         return await Task.FromResult(meetings);
     }
 
-    private static async Task<List<TopicData>> ScrapeMeetingTopicsAsync(HtmlDocument htmlDoc, int meetingId)
-    {
-        var topicsData = new List<TopicData>();
-
-        // Customize this based on your actual HTML structure
-        var ulNodes = htmlDoc.DocumentNode.SelectNodes("//ul");
-
-        if (ulNodes != null)
-        {
-            foreach (var ulNode in ulNodes)
-            {
-                var liNodes = ulNode.SelectNodes(".//li");
-                if (liNodes != null)
-                {
-                    var currentTopic = new TopicData();
-
-                    foreach (var liNode in liNodes)
-                    {
-                        var text = liNode.InnerText.Trim();
-
-                        // Check if this is a subtopic (starts with dash or hyphen)
-                        if (text.StartsWith('-') || text.StartsWith('–') || text.StartsWith('•'))
-                        {
-                            // Remove the dash/hyphen/bullet and trim
-                            var subTopicText = text.Substring(1).Trim();
-                            if (!string.IsNullOrEmpty(subTopicText))
-                            {
-                                currentTopic.SubTopics.Add(subTopicText);
-                            }
-                        }
-                        else
-                        {
-                            // This is a new main topic
-                            if (!string.IsNullOrEmpty(currentTopic.MainTopic))
-                            {
-                                topicsData.Add(currentTopic);
-                            }
-
-                            currentTopic = new TopicData
-                            {
-                                MainTopic = text
-                            };
-                        }
-                    }
-
-                    // Add the last topic
-                    if (!string.IsNullOrEmpty(currentTopic.MainTopic))
-                    {
-                        topicsData.Add(currentTopic);
-                    }
-                }
-            }
-        }
-
-        return await Task.FromResult(topicsData);
-    }
 }
 

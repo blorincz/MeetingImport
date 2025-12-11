@@ -4,7 +4,7 @@ using System.Text.RegularExpressions;
 
 namespace BilderbergImport.Services;
 
-public class TableParticipantParser
+public static class TableParticipantParser
 {
     public static List<Participant> ParseParticipantsFromTable(string htmlContent)
     {

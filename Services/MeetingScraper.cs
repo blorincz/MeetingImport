@@ -19,7 +19,7 @@ public class MeetingData
     public List<MeetingTopicData> MainTopics { get; set; } = [];
 }
 
-public class RobustMeetingScraper
+public static class MeetingScraper
 {
     public static List<MeetingData> ExtractMeetings(HtmlDocument htmlDoc)
     {
@@ -178,22 +178,6 @@ public class RobustMeetingScraper
         }
 
         return meeting;
-    }
-
-    private static List<string> ExtractListItems(HtmlNode ulNode)
-    {
-        var items = new List<string>();
-        var liNodes = ulNode.SelectNodes(".//li");
-
-        if (liNodes != null)
-        {
-            foreach (var liNode in liNodes)
-            {
-                items.Add(liNode.InnerText.Trim());
-            }
-        }
-
-        return items;
     }
 
     private static List<MeetingData> ExtractByDatePatterns(HtmlDocument htmlDoc)
