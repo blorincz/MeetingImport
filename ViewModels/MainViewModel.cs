@@ -1,7 +1,8 @@
-﻿using CommunityToolkit.Mvvm.ComponentModel;
-using CommunityToolkit.Mvvm.Input;
-using BilderbergImport.Models;
+﻿using BilderbergImport.Models;
 using BilderbergImport.Services;
+using CommunityToolkit.Mvvm.ComponentModel;
+using CommunityToolkit.Mvvm.Input;
+using HtmlAgilityPack;
 using System.Collections.ObjectModel;
 using System.Windows;
 
@@ -11,88 +12,109 @@ public partial class MainViewModel : ObservableObject
 {
     private readonly DataService _dataService;
     private readonly ScrapingService _scrapingService;
-    private readonly ConfigurationService _configurationService;
+
+    // HTML Inputs
+    [ObservableProperty]
+    [NotifyCanExecuteChangedFor(nameof(ImportMeetingsCommand))]
+    private string _meetingsHtml = string.Empty;
 
     [ObservableProperty]
-    private string _url;
+    [NotifyCanExecuteChangedFor(nameof(ImportParticipantsCommand))]
+    [NotifyCanExecuteChangedFor(nameof(ImportParticipantsFromTableCommand))]
+    private string _participantsHtml = string.Empty;
 
+    // Selected meeting for participants import
+    [ObservableProperty]
+    [NotifyCanExecuteChangedFor(nameof(ImportParticipantsCommand))]
+    [NotifyCanExecuteChangedFor(nameof(ImportParticipantsFromTableCommand))]
+    private Meeting? _selectedMeeting;
+
+    [ObservableProperty]
+    private ObservableCollection<Meeting> _meetings = new();
+
+    // Status
     [ObservableProperty]
     private string _status = "Ready";
 
     [ObservableProperty]
     private bool _isImporting;
 
-    // Import URLs
-    [ObservableProperty]
-    private string _participantsUrl = string.Empty;
-
-    [ObservableProperty]
-    private string _meetingsUrl = string.Empty;
-
-    [ObservableProperty]
-    private string _topicsUrl = string.Empty;
-
-    // Selected meeting for participants import
-    [ObservableProperty]
-    private Meeting _selectedMeeting;
-
+    // Data collections
     [ObservableProperty]
     private ObservableCollection<Participant> _participants = [];
-
-    [ObservableProperty]
-    private ObservableCollection<Meeting> _meetings = [];
 
     [ObservableProperty]
     private ObservableCollection<MeetingTopic> _meetingTopics = [];
 
     [ObservableProperty]
-    private ObservableCollection<MeetingParticipant> _meetingParticipants = [];
+    private ObservableCollection<MeetingTopicSubTopic> _meetingTopicSubTopics = [];
 
     [ObservableProperty]
-    private ObservableCollection<object> _selectedTabItems = [];
+    private ObservableCollection<MeetingParticipant> _meetingParticipants = [];
 
     public MainViewModel()
     {
-        // Initialize configuration
-        _configurationService = new ConfigurationService();
-
-        // Get connection string from configuration
-        var connectionString = _configurationService.GetConnectionString();
-
+        var configurationService = new ConfigurationService();
+        var connectionString = configurationService.GetConnectionString();
         _dataService = new DataService(connectionString);
         _scrapingService = new ScrapingService(_dataService);
 
-        // Get default URL from configuration
-        Url = _configurationService.GetSetting("AppSettings:DefaultUrl")
-            ?? "https://www.bilderbergmeetings.org/meetings/meeting-2025/press-release-2025";
+        LoadMeetingsAsync();
     }
 
-    [RelayCommand]
+    private async void LoadMeetingsAsync()
+    {
+        try
+        {
+            var meetings = await _dataService.GetMeetingsAsync();
+            Meetings = new ObservableCollection<Meeting>(meetings);
+
+            if (Meetings.Any() && SelectedMeeting == null)
+            {
+                SelectedMeeting = Meetings.First();
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error loading meetings: {ex.Message}");
+        }
+    }
+
+    [RelayCommand(CanExecute = nameof(CanImportMeetings))]
     private async Task ImportMeetings()
     {
-        if (string.IsNullOrWhiteSpace(MeetingsUrl))
-        {
-            MessageBox.Show("Please enter a URL for meetings", "Error",
-                MessageBoxButton.OK, MessageBoxImage.Warning);
-            return;
-        }
-
         try
         {
             IsImporting = true;
-            Status = "Importing meetings...";
+            Status = "Importing meetings and topics...";
 
-            await _scrapingService.ImportMeetingsFromUrl(MeetingsUrl);
+            // Track import statistics
+            int importedCount = 0;
+            int duplicateCount = 0;
+            int errorCount = 0;
+
+            await _scrapingService.ImportMeetingsFromHtml(MeetingsHtml);
 
             // Reload meetings
             var meetings = await _dataService.GetMeetingsAsync();
             Meetings = new ObservableCollection<Meeting>(meetings);
 
-            Status = "Meetings imported successfully!";
-            MessageBox.Show("Meetings imported successfully!", "Success",
-                MessageBoxButton.OK, MessageBoxImage.Information);
+            MeetingsHtml = string.Empty;
 
-            // Load all data
+            Status = $"Import complete. Imported: {importedCount}, Duplicates: {duplicateCount}, Errors: {errorCount}";
+
+            if (duplicateCount > 0 || errorCount > 0)
+            {
+                MessageBox.Show($"Import complete.\nImported: {importedCount}\nDuplicates skipped: {duplicateCount}\nErrors: {errorCount}",
+                    "Import Results", MessageBoxButton.OK,
+                    duplicateCount > 0 ? MessageBoxImage.Information : MessageBoxImage.Warning);
+            }
+            else
+            {
+                MessageBox.Show("Meetings imported successfully!", "Success",
+                    MessageBoxButton.OK, MessageBoxImage.Information);
+            }
+
             await LoadData();
         }
         catch (Exception ex)
@@ -107,29 +129,39 @@ public partial class MainViewModel : ObservableObject
         }
     }
 
-    [RelayCommand]
+    private bool CanImportMeetings() => !string.IsNullOrWhiteSpace(MeetingsHtml) && !IsImporting;
+
+    [RelayCommand(CanExecute = nameof(CanImportParticipants))]
     private async Task ImportParticipants()
     {
-        if (string.IsNullOrWhiteSpace(ParticipantsUrl))
-        {
-            MessageBox.Show("Please enter a URL for participants", "Error",
-                MessageBoxButton.OK, MessageBoxImage.Warning);
-            return;
-        }
+        await ImportParticipantsInternal("text");
+    }
 
-        if (SelectedMeeting == null)
-        {
-            MessageBox.Show("Please select a meeting for the participants", "Error",
-                MessageBoxButton.OK, MessageBoxImage.Warning);
-            return;
-        }
+    [RelayCommand(CanExecute = nameof(CanImportParticipants))]
+    private async Task ImportParticipantsFromTable()
+    {
+        await ImportParticipantsInternal("table");
+    }
 
+    [RelayCommand(CanExecute = nameof(CanImportParticipants))]
+    private async Task ImportParticipantsInternal(string format)
+    {
         try
         {
             IsImporting = true;
-            Status = "Importing participants...";
+            Status = $"Importing participants from {format} format...";
 
-            await _scrapingService.ImportParticipantsFromUrl(ParticipantsUrl, SelectedMeeting.Id);
+            if (format == "table")
+            {
+                await _scrapingService.ImportParticipantsFromTable(ParticipantsHtml, SelectedMeeting!.Id);
+            }
+            else
+            {
+                await _scrapingService.ImportParticipantsFromHtml(ParticipantsHtml, SelectedMeeting!.Id);
+            }
+
+            // Clear the HTML after import
+            ParticipantsHtml = string.Empty;
 
             Status = "Participants imported successfully!";
             MessageBox.Show("Participants imported successfully!", "Success",
@@ -150,48 +182,10 @@ public partial class MainViewModel : ObservableObject
         }
     }
 
-    [RelayCommand]
-    private async Task ImportTopics()
-    {
-        if (string.IsNullOrWhiteSpace(TopicsUrl))
-        {
-            MessageBox.Show("Please enter a URL for topics", "Error",
-                MessageBoxButton.OK, MessageBoxImage.Warning);
-            return;
-        }
-
-        if (SelectedMeeting == null)
-        {
-            MessageBox.Show("Please select a meeting for the topics", "Error",
-                MessageBoxButton.OK, MessageBoxImage.Warning);
-            return;
-        }
-
-        try
-        {
-            IsImporting = true;
-            Status = "Importing topics...";
-
-            await _scrapingService.ImportTopicsFromUrl(TopicsUrl, SelectedMeeting.Id);
-
-            Status = "Topics imported successfully!";
-            MessageBox.Show("Topics imported successfully!", "Success",
-                MessageBoxButton.OK, MessageBoxImage.Information);
-
-            // Load all data
-            await LoadData();
-        }
-        catch (Exception ex)
-        {
-            Status = $"Error: {ex.Message}";
-            MessageBox.Show($"Error importing topics: {ex.Message}", "Error",
-                MessageBoxButton.OK, MessageBoxImage.Error);
-        }
-        finally
-        {
-            IsImporting = false;
-        }
-    }
+    private bool CanImportParticipants() =>
+        !string.IsNullOrWhiteSpace(ParticipantsHtml) &&
+        SelectedMeeting != null &&
+        !IsImporting;
 
     [RelayCommand]
     private async Task LoadData()
@@ -201,11 +195,15 @@ public partial class MainViewModel : ObservableObject
             Status = "Loading data...";
 
             var participants = await _dataService.GetParticipantsAsync();
+            var meetings = await _dataService.GetMeetingsAsync(); // Add this
             var topics = await _dataService.GetMeetingTopicsAsync();
+            var subTopics = await _dataService.GetMeetingTopicSubTopicsAsync();
             var meetingParticipants = await _dataService.GetMeetingParticipantsAsync();
 
             Participants = new ObservableCollection<Participant>(participants);
+            Meetings = new ObservableCollection<Meeting>(meetings); // Add this
             MeetingTopics = new ObservableCollection<MeetingTopic>(topics);
+            MeetingTopicSubTopics = new ObservableCollection<MeetingTopicSubTopic>(subTopics);
             MeetingParticipants = new ObservableCollection<MeetingParticipant>(meetingParticipants);
 
             Status = "Data loaded successfully!";
@@ -237,6 +235,7 @@ public partial class MainViewModel : ObservableObject
                 // Clear collections
                 Participants.Clear();
                 Meetings.Clear();
+                MeetingTopicSubTopics.Clear();
                 MeetingTopics.Clear();
                 MeetingParticipants.Clear();
 
@@ -251,4 +250,3 @@ public partial class MainViewModel : ObservableObject
         }
     }
 }
-

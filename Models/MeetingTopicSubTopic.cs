@@ -3,20 +3,19 @@ using System.ComponentModel.DataAnnotations.Schema;
 
 namespace BilderbergImport.Models;
 
-public class MeetingTopic
+public class MeetingTopicSubTopic
 {
     [Key]
     [DatabaseGenerated(DatabaseGeneratedOption.Identity)]
     public int Id { get; set; }
 
     [Required]
-    public int MeetingId { get; set; }
+    public int TopicId { get; set; }
 
     [Required]
+    [MaxLength(200)]
     public string Topic { get; set; } = string.Empty;
 
-    [ForeignKey("MeetingId")]
-    public Meeting Meeting { get; set; } = null!;
-
-    public ICollection<MeetingTopicSubTopic> SubTopics { get; set; } = [];
+    [ForeignKey("TopicId")]
+    public MeetingTopic MeetingTopic { get; set; } = null!;
 }

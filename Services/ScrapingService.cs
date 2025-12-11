@@ -12,43 +12,140 @@ public class ScrapingService
         _dataService = dataService;
     }
 
-    public async Task ImportMeetingsFromUrl(string url)
+    private class TopicData
     {
-        var web = new HtmlWeb();
-        var htmlDoc = await Task.Run(() => web.Load(url));
+        public string MainTopic { get; set; } = string.Empty;
+        public List<string> SubTopics { get; set; } = new();
+    }
 
+    public async Task ImportMeetingsFromHtml(string htmlContent)
+    {
+        var htmlDoc = new HtmlDocument();
+        htmlDoc.LoadHtml(htmlContent);
+
+        //var meetingDataList = RobustMeetingScraper.ExtractMeetings(htmlDoc);
         var meetings = await ScrapeMeetingsAsync(htmlDoc);
+
         foreach (var meeting in meetings)
         {
-            await _dataService.AddMeetingAsync(meeting);
+            try
+            {
+                // Check if meeting already exists
+                bool meetingExists = await _dataService.MeetingExistsAsync(
+                    meeting.Year,
+                    meeting.FromDate,
+                    meeting.Location);
+
+                if (!meetingExists)
+                {
+                    var addedMeeting = await _dataService.AddMeetingAsync(meeting);
+                }
+                else
+                {
+                    // Meeting already exists - you could update it or skip
+                    Console.WriteLine($"Meeting already exists: {meeting.Year} - {meeting.Location}");
+                }
+            }
+            catch (InvalidOperationException ex)
+            {
+                // Log duplicate error and continue
+                Console.WriteLine($"Duplicate meeting skipped: {ex.Message}");
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Error processing meeting: {ex.Message}");
+            }
         }
     }
 
-    public async Task ImportParticipantsFromUrl(string url, int meetingId)
+    public async Task ImportParticipantsFromHtml(string htmlContent, int meetingId)
     {
-        var web = new HtmlWeb();
-        var htmlDoc = await Task.Run(() => web.Load(url));
+        var participants = ParticipantScraper.ParseParticipants(htmlContent);
+        await ProcessParticipants(participants, meetingId);
+    }
 
-        var participants = await ScrapeParticipantsAsync(htmlDoc);
+    public async Task ImportParticipantsFromTable(string htmlContent, int meetingId)
+    {
+        var participants = TableParticipantParser.ParseParticipantsFromTable(htmlContent);
+        await ProcessParticipants(participants, meetingId);
+    }
+
+    private async Task ProcessParticipants(List<Participant> participants, int meetingId)
+    {
         foreach (var participant in participants)
         {
-            // Add participant to database
-            var addedParticipant = await _dataService.AddParticipantAsync(participant);
+            try
+            {
+                // Check if participant already exists
+                var existingParticipant = await _dataService.GetParticipantByNameAsync(
+                    participant.FirstName,
+                    participant.LastName);
 
-            // Link participant to selected meeting
-            await _dataService.AddMeetingParticipantAsync(meetingId, addedParticipant.Id);
+                Participant addedParticipant;
+
+                if (existingParticipant == null)
+                {
+                    // Add new participant
+                    addedParticipant = await _dataService.AddParticipantAsync(participant);
+                }
+                else
+                {
+                    // Use existing participant
+                    addedParticipant = existingParticipant;
+                    Console.WriteLine($"Participant already exists: {participant.FirstName} {participant.LastName}");
+                }
+
+                // Check if relationship already exists
+                var relationshipExists = await _dataService.MeetingParticipantExistsAsync(
+                    meetingId,
+                    addedParticipant.Id);
+
+                if (!relationshipExists)
+                {
+                    // Link participant to meeting
+                    await _dataService.AddMeetingParticipantAsync(meetingId, addedParticipant.Id);
+                }
+                else
+                {
+                    Console.WriteLine($"Participant already linked to meeting: {participant.FirstName} {participant.LastName}");
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Error processing participant: {ex.Message}");
+            }
         }
     }
 
-    public async Task ImportTopicsFromUrl(string url, int meetingId)
+    public async Task ImportTopicsForMeeting(MeetingData meetingData, int meetingId)
     {
-        var web = new HtmlWeb();
-        var htmlDoc = await Task.Run(() => web.Load(url));
-
-        var topics = await ScrapeMeetingTopicsAsync(htmlDoc, meetingId);
-        foreach (var topic in topics)
+        foreach (var topicData in meetingData.MainTopics)
         {
-            await _dataService.AddMeetingTopicAsync(topic);
+            // Check if topic already exists for this meeting
+            var existingTopic = await _dataService.GetTopicByMeetingAndTextAsync(meetingId, topicData.Topic);
+
+            if (existingTopic == null)
+            {
+                var topic = new MeetingTopic
+                {
+                    MeetingId = meetingId,
+                    Topic = topicData.Topic
+                };
+
+                int addedTopicId = await _dataService.AddMeetingTopicAsync(topic);
+
+                // Import subtopics
+                foreach (var subTopicText in topicData.SubTopics)
+                {
+                    var subTopic = new MeetingTopicSubTopic
+                    {
+                        TopicId = addedTopicId,
+                        Topic = subTopicText
+                    };
+
+                    await _dataService.AddMeetingTopicSubTopicAsync(subTopic);
+                }
+            }
         }
     }
 
@@ -56,13 +153,12 @@ public class ScrapingService
     {
         var participants = new List<Participant>();
 
-        // Customize this based on your actual website structure
-        // Example: scraping from a table
-        var tableRows = htmlDoc.DocumentNode.SelectNodes("//table[@id='participants-table']//tr");
+        // Customize this based on your actual HTML structure
+        var tableRows = htmlDoc.DocumentNode.SelectNodes("//table//tr");
 
         if (tableRows != null)
         {
-            foreach (var row in tableRows.Skip(1)) // Skip header
+            foreach (var row in tableRows.Skip(1)) // Skip header if present
             {
                 var cells = row.SelectNodes("td");
                 if (cells != null && cells.Count >= 4)
@@ -78,63 +174,148 @@ public class ScrapingService
             }
         }
 
+        // Alternative: Look for list items
+        if (participants.Count == 0)
+        {
+            var listItems = htmlDoc.DocumentNode.SelectNodes("//li");
+            if (listItems != null)
+            {
+                foreach (var item in listItems)
+                {
+                    var text = item.InnerText.Trim();
+                    // Parse participant from text (customize based on your format)
+                    var participant = ParseParticipantFromText(text);
+                    if (participant != null)
+                    {
+                        participants.Add(participant);
+                    }
+                }
+            }
+        }
+
         return await Task.FromResult(participants);
     }
 
-    private async Task<List<Meeting>> ScrapeMeetingsAsync(HtmlDocument htmlDoc)
+    private Participant ParseParticipantFromText(string text)
+    {
+        // Customize this based on your participant format
+        // Example: "John Doe (USA) - CEO"
+        var match = System.Text.RegularExpressions.Regex.Match(text,
+            @"^(?<first>\w+)\s+(?<last>\w+)\s*(?:\((?<country>\w+)\))?\s*(?:-\s*(?<title>.+))?$");
+
+        if (match.Success)
+        {
+            return new Participant
+            {
+                FirstName = match.Groups["first"].Value,
+                LastName = match.Groups["last"].Value,
+                CountryCode = match.Groups["country"].Success ? match.Groups["country"].Value : null,
+                Title = match.Groups["title"].Success ? match.Groups["title"].Value : null
+            };
+        }
+
+        return null;
+    }
+
+    private static async Task<List<Meeting>> ScrapeMeetingsAsync(HtmlDocument htmlDoc)
     {
         var meetings = new List<Meeting>();
 
-        // Customize this based on your actual website structure
-        var meetingSections = htmlDoc.DocumentNode.SelectNodes("//div[@class='meeting']");
+        // Use the meeting scraper from previous response
+        var meetingDataList = RobustMeetingScraper.ExtractMeetings(htmlDoc);
 
-        if (meetingSections != null)
+        foreach (var meetingData in meetingDataList)
         {
-            foreach (var section in meetingSections)
+            try
             {
-                try
+                var meeting = new Meeting
                 {
-                    var meeting = new Meeting
-                    {
-                        Year = short.Parse(section.SelectSingleNode(".//span[@class='year']")?.InnerText.Trim() ?? "0"),
-                        FromDate = DateTime.Parse(section.SelectSingleNode(".//span[@class='from-date']")?.InnerText.Trim() ?? DateTime.Now.ToString()),
-                        ToDate = DateTime.Parse(section.SelectSingleNode(".//span[@class='to-date']")?.InnerText.Trim() ?? DateTime.Now.ToString()),
-                        Location = section.SelectSingleNode(".//span[@class='location']")?.InnerText.Trim() ?? "Unknown",
-                        Description = section.SelectSingleNode(".//div[@class='description']")?.InnerText.Trim()
-                    };
+                    Year = meetingData.Year,
+                    FromDate = meetingData.FromDate,
+                    ToDate = meetingData.ToDate,
+                    Location = meetingData.Location,
+                    Description = meetingData.Description
+                };
 
-                    meetings.Add(meeting);
-                }
-                catch (Exception ex)
+                foreach (MeetingTopicData topic in meetingData.MainTopics)
                 {
-                    Console.WriteLine($"Error parsing meeting: {ex.Message}");
+                    MeetingTopic newMeetingTopic = new() { Meeting = meeting, Topic = topic.Topic };
+
+                    foreach (string subtopic in topic.SubTopics)
+                    {
+                        newMeetingTopic.SubTopics.Add(
+                            new MeetingTopicSubTopic { MeetingTopic = newMeetingTopic, Topic = subtopic });
+                    }
+
+                    meeting.MeetingTopics.Add(newMeetingTopic);
                 }
+
+                meetings.Add(meeting);
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Error creating meeting from scraped data: {ex.Message}");
             }
         }
 
         return await Task.FromResult(meetings);
     }
 
-    private async Task<List<MeetingTopic>> ScrapeMeetingTopicsAsync(HtmlDocument htmlDoc, int meetingId)
+    private static async Task<List<TopicData>> ScrapeMeetingTopicsAsync(HtmlDocument htmlDoc, int meetingId)
     {
-        var topics = new List<MeetingTopic>();
+        var topicsData = new List<TopicData>();
 
-        // Customize this based on your actual website structure
-        var topicNodes = htmlDoc.DocumentNode.SelectNodes("//ul[@class='topics-list']/li");
+        // Customize this based on your actual HTML structure
+        var ulNodes = htmlDoc.DocumentNode.SelectNodes("//ul");
 
-        if (topicNodes != null)
+        if (ulNodes != null)
         {
-            foreach (var topicNode in topicNodes)
+            foreach (var ulNode in ulNodes)
             {
-                topics.Add(new MeetingTopic
+                var liNodes = ulNode.SelectNodes(".//li");
+                if (liNodes != null)
                 {
-                    MeetingId = meetingId,
-                    Topic = topicNode.InnerText.Trim()
-                });
+                    var currentTopic = new TopicData();
+
+                    foreach (var liNode in liNodes)
+                    {
+                        var text = liNode.InnerText.Trim();
+
+                        // Check if this is a subtopic (starts with dash or hyphen)
+                        if (text.StartsWith('-') || text.StartsWith('–') || text.StartsWith('•'))
+                        {
+                            // Remove the dash/hyphen/bullet and trim
+                            var subTopicText = text.Substring(1).Trim();
+                            if (!string.IsNullOrEmpty(subTopicText))
+                            {
+                                currentTopic.SubTopics.Add(subTopicText);
+                            }
+                        }
+                        else
+                        {
+                            // This is a new main topic
+                            if (!string.IsNullOrEmpty(currentTopic.MainTopic))
+                            {
+                                topicsData.Add(currentTopic);
+                            }
+
+                            currentTopic = new TopicData
+                            {
+                                MainTopic = text
+                            };
+                        }
+                    }
+
+                    // Add the last topic
+                    if (!string.IsNullOrEmpty(currentTopic.MainTopic))
+                    {
+                        topicsData.Add(currentTopic);
+                    }
+                }
             }
         }
 
-        return await Task.FromResult(topics);
+        return await Task.FromResult(topicsData);
     }
 }
 

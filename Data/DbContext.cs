@@ -10,6 +10,7 @@ public class BilderbergDbContext : DbContext
     public DbSet<Participant> Participants { get; set; }
     public DbSet<Meeting> Meetings { get; set; }
     public DbSet<MeetingTopic> MeetingTopics { get; set; }
+    public DbSet<MeetingTopicSubTopic> MeetingTopicSubTopics { get; set; }
     public DbSet<MeetingParticipant> MeetingParticipants { get; set; }
 
     // Constructor for dependency injection
@@ -52,6 +53,12 @@ public class BilderbergDbContext : DbContext
             .WithMany(m => m.MeetingTopics)
             .HasForeignKey(mt => mt.MeetingId)
             .OnDelete(DeleteBehavior.Cascade);
+
+        modelBuilder.Entity<MeetingTopicSubTopic>()
+                .HasOne(mts => mts.MeetingTopic)
+                .WithMany(mt => mt.SubTopics)
+                .HasForeignKey(mts => mts.TopicId)
+                .OnDelete(DeleteBehavior.Cascade);
     }
 }
 

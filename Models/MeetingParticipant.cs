@@ -5,10 +5,14 @@ namespace BilderbergImport.Models;
 
 public class MeetingParticipant
 {
-    [Key, Column(Order = 0)]
+    [Key]
+    [DatabaseGenerated(DatabaseGeneratedOption.Identity)]
+    public int Id { get; set; }
+
+    [Required]
     public int MeetingId { get; set; }
 
-    [Key, Column(Order = 1)]
+    [Required]
     public int ParticipantId { get; set; }
 
     [ForeignKey("MeetingId")]
